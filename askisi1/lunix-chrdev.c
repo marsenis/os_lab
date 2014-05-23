@@ -32,6 +32,8 @@
  * Global data
  */
 struct cdev lunix_chrdev_cdev;
+char op[3][6] = { "BATT", "TEMP", "LIGHT" }; // *** TESTING ***
+int minor, sensor_id, operation; // *** TESTING ***
 
 /*
  * Just a quick [unlocked] check to see if the cached
@@ -102,6 +104,9 @@ static int lunix_chrdev_open(struct inode *inode, struct file *filp)
 	 * Associate this open file with the relevant sensor based on
 	 * the minor number of the device node [/dev/sensor<NO>-<TYPE>]
 	 */
+	minor = MINOR(inode->i_rdev);
+	sensor_id = minor >> 3;
+	operation = minor & 0x7;
 	
 	/* Allocate a new Lunix character device private state structure */
 	/* ? */
@@ -129,11 +134,30 @@ static ssize_t lunix_chrdev_read(struct file *filp, char __user *usrbuf, size_t 
 	struct lunix_sensor_struct *sensor;
 	struct lunix_chrdev_state_struct *state;
 
-	state = filp->private_data;
-	WARN_ON(!state);
+	//state = filp->private_data;
+	//WARN_ON(!state);
 
-	sensor = state->sensor;
-	WARN_ON(!sensor);
+	//sensor = state->sensor;
+	//WARN_ON(!sensor);
+
+	/* BEGIN: *** TESTING *** */
+	char *mybuf;
+
+	mybuf = kzalloc(35, GFP_KERNEL);
+
+	sprintf(mybuf, "Sensor id: %d\nOperation: %s\n", sensor_id, op[operation]);
+	ret = copy_to_user(usrbuf, mybuf, 33);
+	
+	kfree(mybuf);
+
+	if (ret != 0) {
+		ret = -EINVAL;
+	} else {
+		ret = 33;
+	}
+
+	goto out;
+	/* END:   *** TESTING *** */
 
 	/* Lock? */
 	/*
@@ -169,7 +193,7 @@ static int lunix_chrdev_mmap(struct file *filp, struct vm_area_struct *vma)
 
 static struct file_operations lunix_chrdev_fops = 
 {
-        .owner          = THIS_MODULE,
+	.owner          = THIS_MODULE,
 	.open           = lunix_chrdev_open,
 	.release        = lunix_chrdev_release,
 	.read           = lunix_chrdev_read,
@@ -194,12 +218,14 @@ int lunix_chrdev_init(void)
 	
 	dev_no = MKDEV(LUNIX_CHRDEV_MAJOR, 0);
 	/* ? */
+	ret = register_chrdev_region(dev_no, lunix_minor_cnt, "Lunix:TNG");
 	/* register_chrdev_region? */
 	if (ret < 0) {
 		debug("failed to register region, ret = %d\n", ret);
 		goto out;
 	}	
 	/* ? */
+	ret = cdev_add(&lunix_chrdev_cdev, dev_no, lunix_minor_cnt);
 	/* cdev_add? */
 	if (ret < 0) {
 		debug("failed to add character device\n");
