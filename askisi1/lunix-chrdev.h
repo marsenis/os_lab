@@ -14,7 +14,7 @@
  * Lunix:TNG character device
  */
 #define LUNIX_CHRDEV_MAJOR	60	/* Reserved for local / experimental use */
-#define LUNIX_CHRDEV_BUFSZ      20      /* Buffer size used to hold textual info */
+#define LUNIX_CHRDEV_BUFSZ      100      /* Buffer size used to hold textual info */
 
 /* Compile-time parameters */
 

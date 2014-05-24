@@ -32,8 +32,8 @@
  * Global data
  */
 struct cdev lunix_chrdev_cdev;
-char op[3][6] = { "BATT", "TEMP", "LIGHT" }; // *** TESTING ***
-int minor, sensor_id, operation; // *** TESTING ***
+//char op[3][6] = { "BATT", "TEMP", "LIGHT" }; // *** TESTING ***
+//int minor, sensor_id, operation; // *** TESTING ***
 
 /*
  * Just a quick [unlocked] check to see if the cached
@@ -92,6 +92,8 @@ static int lunix_chrdev_state_update(struct lunix_chrdev_state_struct *state)
 static int lunix_chrdev_open(struct inode *inode, struct file *filp)
 {
 	/* Declarations */
+	int minor;
+	struct lunix_chrdev_state_struct *state;
 	/* ? */
 	int ret;
 
@@ -105,8 +107,12 @@ static int lunix_chrdev_open(struct inode *inode, struct file *filp)
 	 * the minor number of the device node [/dev/sensor<NO>-<TYPE>]
 	 */
 	minor = MINOR(inode->i_rdev);
-	sensor_id = minor >> 3;
-	operation = minor & 0x7;
+	state = (struct lunix_chrdev_state_struct *)
+				kzalloc( sizeof(struct lunix_chrdev_state_struct), GFP_KERNEL );
+	state->type = minor & 0x7;
+	state->sensor = &lunix_sensors[minor >> 3];
+
+	filp->private_data = state;
 	
 	/* Allocate a new Lunix character device private state structure */
 	/* ? */
@@ -118,6 +124,11 @@ out:
 static int lunix_chrdev_release(struct inode *inode, struct file *filp)
 {
 	/* ? */
+	struct lunix_chrdev_state_struct *state;
+
+	state = (struct lunix_chrdev_state_struct *) filp->private_data;
+	kfree(state);
+
 	return 0;
 }
 
@@ -133,27 +144,27 @@ static ssize_t lunix_chrdev_read(struct file *filp, char __user *usrbuf, size_t 
 
 	struct lunix_sensor_struct *sensor;
 	struct lunix_chrdev_state_struct *state;
+	struct lunix_msr_data_struct *msr;
 
-	//state = filp->private_data;
-	//WARN_ON(!state);
+	state = filp->private_data;
+	WARN_ON(!state);
 
-	//sensor = state->sensor;
-	//WARN_ON(!sensor);
+	sensor = state->sensor;
+	WARN_ON(!sensor);
+
+	msr = sensor->msr_data[state->type];
 
 	/* BEGIN: *** TESTING *** */
-	char *mybuf;
+	spin_lock(&state->lock);
+	sprintf(state->buf_data, "magic=%d, update=%d, value=%d\n", msr->magic, msr->last_update, msr->values[0]);
+	spin_unlock(&state->lock);
 
-	mybuf = kzalloc(35, GFP_KERNEL);
-
-	sprintf(mybuf, "Sensor id: %d\nOperation: %s\n", sensor_id, op[operation]);
-	ret = copy_to_user(usrbuf, mybuf, 33);
-	
-	kfree(mybuf);
+	ret = copy_to_user(usrbuf, state->buf_data, 25 + 3*9);
 
 	if (ret != 0) {
 		ret = -EINVAL;
 	} else {
-		ret = 33;
+		ret = 25+3*9;
 	}
 
 	goto out;
