@@ -67,7 +67,7 @@ static void lunix_ldisc_close(struct tty_struct *tty)
 static void lunix_ldisc_receive(struct tty_struct *tty,
 	const unsigned char *cp, char *fp, int count)
 {
-#if 1
+#if 0
 #if LUNIX_DEBUG
 	int i;
 

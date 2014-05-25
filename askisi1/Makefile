@@ -12,7 +12,7 @@ CC = gcc
 
 # Remove comment to enable verbose output from the kernel build system
 KERNEL_VERBOSE = 'V=1'
-DEBUG = n
+DEBUG = y
 
 # Add your debugging flag (or not) to CFLAGS
 # Warnings are errors.
