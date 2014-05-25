@@ -1,1 +1,0 @@
-cmd_/home/user/host/os_lab/askisi1/lunix.ko := ld -r -m elf_x86_64 -T /home/user/host/kernel/linux-3.14.3/scripts/module-common.lds --build-id  -o /home/user/host/os_lab/askisi1/lunix.ko /home/user/host/os_lab/askisi1/lunix.o /home/user/host/os_lab/askisi1/lunix.mod.o
