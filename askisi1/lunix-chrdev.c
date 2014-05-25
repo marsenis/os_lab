@@ -58,8 +58,10 @@ static int lunix_chrdev_state_needs_refresh(struct lunix_chrdev_state_struct *st
 static int lunix_chrdev_state_update(struct lunix_chrdev_state_struct *state)
 {
 	struct lunix_sensor_struct *sensor;
-	
-	debug("entering state update\n");
+	uint16_t raw_data;
+   long cooked_data, ipart, fpart;
+
+	debug("entering\n");
 
 	/*
 	 * Grab the raw data quickly, hold the
@@ -67,19 +69,60 @@ static int lunix_chrdev_state_update(struct lunix_chrdev_state_struct *state)
 	 */
 	/* ? */
 	/* Why use spinlocks? See LDD3, p. 119 */
-
-	/*
+   
+   sensor = state->sensor;
+   spin_lock(&sensor->lock);
+	down_interruptible(&state->lock);
+   
+   /*
 	 * Any new data available?
 	 */
 	/* ? */
+   if (state->buf_timestamp == sensor->msr_data[state->type]->last_update) {
+      debug("No new data...");
+      spin_unlock(&sensor->lock);
+      up(&state->lock);
+      ret -EAGAIN;
+   }
+
+   
+   raw_data = (uint16_t) sensor->msr_data[state->type]->values[0];
+   state->buf_timestamp = sensor->msr_data[state->type]->last_update;
+
+   spin_unlock(&sensor->lock);
 
 	/*
 	 * Now we can take our time to format them,
 	 * holding only the private state semaphore
 	 */
 
-	/* ? */
+   switch(state->type) {
+      case BATT:
+         debug("convert voltage...");
+         cooked_data = lookup_voltage[raw_data];
+         break;
+      case TEMP:
+         debug("convert temperature...");
+         cooked_data = lookup_temperature[raw_data];
+         break;
+      case LIGHT:
+         debug("convert light...");
+         cooked_data = lookup_light[raw_data];
+         break;
+      default:
+         debug("WTF type is this?");
+         ret -1;
+   }
 
+   ipart = cooked_data/1000;
+   fpart = cooked_data%1000;
+   
+   //cooked_data must be added to buff !!!!
+   //How, and in what format ???
+
+   up(&state->lock);
+   
+   /* ? */
 	debug("leaving\n");
 	return 0;
 }
@@ -114,7 +157,7 @@ static int lunix_chrdev_open(struct inode *inode, struct file *filp)
 	/* ? */
    state = (struct lunix_chrdev_state_struct*) vmalloc(sizeof(struct lunix_chrdev_state_struct));
    if (lunix_chrdev_stat == NULL) {
-      printk("lunix_chrdev_open@vmalloc: Out of memory...\n");
+      debug("Out of memory...\n");
       ret = -ENOMEM;
       goto out;
    }
@@ -134,7 +177,7 @@ static int lunix_chrdev_open(struct inode *inode, struct file *filp)
          state->type = LIGHT;
          break;
       default:
-         printk("wrong minor number...\n");
+         debug("wrong minor number...\n");
          ret = -1;
          goto out;
    }
@@ -143,7 +186,7 @@ static int lunix_chrdev_open(struct inode *inode, struct file *filp)
    
    state->sensor = &lunix_sensors[sensor_id];
 
-   state->buf_timestamp = state->sensor->msr_data[operation]->last_update;
+   state->buf_timestamp = 0; //state->sensor->msr_data[operation]->last_update;
 
    filp->private_date = state;
 out:
@@ -154,6 +197,7 @@ out:
 static int lunix_chrdev_release(struct inode *inode, struct file *filp)
 {
 	/* ? */
+   vfree(file->private_data); //free lunix_chrdev_state_struct
 	return 0;
 }
 
@@ -176,7 +220,7 @@ static ssize_t lunix_chrdev_read(struct file *filp, char __user *usrbuf, size_t 
 	sensor = state->sensor;
 	WARN_ON(!sensor);
 
-	/* BEGIN: *** TESTING *** */
+	/* BEGIN: *** TESTING *** *
 	char *mybuf;
 
 	mybuf = kzalloc(35, GFP_KERNEL);
@@ -193,7 +237,7 @@ static ssize_t lunix_chrdev_read(struct file *filp, char __user *usrbuf, size_t 
 	}
 
 	goto out;
-	/* END:   *** TESTING *** */
+	* END:   *** TESTING *** */
 
 	/* Lock? */
 	/*
@@ -202,10 +246,25 @@ static ssize_t lunix_chrdev_read(struct file *filp, char __user *usrbuf, size_t 
 	 * on a "fresh" measurement, do so
 	 */
 	if (*f_pos == 0) {
+      if (down_interruptible(&state->lock))
+         return -ERESTARTSYS;
+
 		while (lunix_chrdev_state_update(state) == -EAGAIN) {
 			/* ? */
 			/* The process needs to sleep */
 			/* See LDD3, page 153 for a hint */
+         up(&state->lock);
+
+         //if (filp->f_flags & O_NONBLOCK)
+         //    retun -EAGAIN;
+         
+         debug("feeling sleepy...");
+         
+         if (wait_event_interruptible(sensor->wq, state->buf_timestamp != sensor->msr_data[state->type]->last_update))
+            return -ERESTARTSYS;
+         
+         if (down_interruptible(&state->lock))
+            return -ERESTARTSYS;
 		}
 	}
 
@@ -214,11 +273,30 @@ static ssize_t lunix_chrdev_read(struct file *filp, char __user *usrbuf, size_t 
 	
 	/* Determine the number of cached bytes to copy to userspace */
 	/* ? */
+   ret = state->buf_lim - *f_pos;
 
-	/* Auto-rewind on EOF mode? */
-	/* ? */
+   if (ret <= cnt) { //maybe needs casting
+      if(copy_to_user(usrbuf, state->buf_data + *f_pos, ret)) {
+         ret = -EFAULT;
+         goto out;
+      }
+      *f_pos = 0;
+   }
+   else {
+      if (copy_to_user(usrbuf, state->buf_lim + *f_pos, cnt)) {
+         ret = -EFAULT;
+         goto out;
+      }
+      ret = cnt;
+      *f_pos += cnt;
+   }
+   
+   /* Auto-rewind on EOF mode*/
+   /* ? */
+
 out:
 	/* Unlock? */
+   up(&state->lock);
 	return ret;
 }
 
