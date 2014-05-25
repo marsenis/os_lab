@@ -59,7 +59,7 @@ static int lunix_chrdev_state_update(struct lunix_chrdev_state_struct *state)
 {
 	struct lunix_sensor_struct *sensor;
 	
-	debug("leaving\n");
+	debug("entering state update\n");
 
 	/*
 	 * Grab the raw data quickly, hold the
@@ -94,6 +94,7 @@ static int lunix_chrdev_open(struct inode *inode, struct file *filp)
 	/* Declarations */
 	/* ? */
 	int ret;
+   struct lunix_chrdev_state_struct *state = NULL;
 
 	debug("entering\n");
 	ret = -ENODEV;
@@ -104,12 +105,47 @@ static int lunix_chrdev_open(struct inode *inode, struct file *filp)
 	 * Associate this open file with the relevant sensor based on
 	 * the minor number of the device node [/dev/sensor<NO>-<TYPE>]
 	 */
-	minor = MINOR(inode->i_rdev);
+	//minor = MINOR(inode->i_rdev);
+   minor = iminor(inode);
 	sensor_id = minor >> 3;
 	operation = minor & 0x7;
 	
 	/* Allocate a new Lunix character device private state structure */
 	/* ? */
+   state = (struct lunix_chrdev_state_struct*) vmalloc(sizeof(struct lunix_chrdev_state_struct));
+   if (lunix_chrdev_stat == NULL) {
+      printk("lunix_chrdev_open@vmalloc: Out of memory...\n");
+      ret = -ENOMEM;
+      goto out;
+   }
+
+   //switch-case for safety
+   switch (operation) {
+      case BATT:
+         debug("type is BATT...\n");
+         state->type = BATT;
+         break;
+      case TEMP:
+         debug("type is TEMP...\n");
+         state->type = TEMP;
+         break;
+      case LIGHT:
+         debug("type is LIGHT...\n");
+         state->type = LIGHT;
+         break;
+      default:
+         printk("wrong minor number...\n");
+         ret = -1;
+         goto out;
+   }
+
+   sema_init(&state->lock, 1);
+   
+   state->sensor = &lunix_sensors[sensor_id];
+
+   state->buf_timestamp = state->sensor->msr_data[operation]->last_update;
+
+   filp->private_date = state;
 out:
 	debug("leaving, with ret = %d\n", ret);
 	return ret;
@@ -134,11 +170,11 @@ static ssize_t lunix_chrdev_read(struct file *filp, char __user *usrbuf, size_t 
 	struct lunix_sensor_struct *sensor;
 	struct lunix_chrdev_state_struct *state;
 
-	//state = filp->private_data;
-	//WARN_ON(!state);
+   state = filp->private_data;
+	WARN_ON(!state);
 
-	//sensor = state->sensor;
-	//WARN_ON(!sensor);
+	sensor = state->sensor;
+	WARN_ON(!sensor);
 
 	/* BEGIN: *** TESTING *** */
 	char *mybuf;
