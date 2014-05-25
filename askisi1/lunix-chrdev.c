@@ -70,11 +70,13 @@ static int lunix_chrdev_state_update(struct lunix_chrdev_state_struct *state)
 	 * Grab the raw data quickly, hold the
 	 * spinlock for as little as possible.
 	 */
-	sensor = state->sensor;
+	WARN_ON( !(sensor = state->sensor) );
 
 	spin_lock(&sensor->lock);
+
 	data = (uint16_t) sensor->msr_data[state->type]->values[0];
 	timestamp = sensor->msr_data[state->type]->last_update;
+
 	spin_unlock(&sensor->lock);
 	/* ? */
 	/* Why use spinlocks? See LDD3, p. 119 */
@@ -91,12 +93,21 @@ static int lunix_chrdev_state_update(struct lunix_chrdev_state_struct *state)
 	 * holding only the private state semaphore
 	 */
 	state->buf_timestamp = timestamp;
-	if (state->type == BATT)
-		value = lookup_voltage[data];
-	else if (state->type == TEMP)
-		value = lookup_temperature[data];
-	else
-		value = lookup_light[data];
+
+	switch (state->type) {
+		case BATT:
+			value = lookup_voltage[data];
+			break;
+		case TEMP:
+			value = lookup_temperature[data];
+			break;
+		case LIGHT:
+			value = lookup_light[data];
+			break;
+		default:
+			printk(KERN_DEBUG "Internal Error: Unknown meassurement type");
+			return -EINVAL;
+	}
 	
 	sprintf(state->buf_data, "%ld.%.3ld\n", value / 1000, value % 1000);
 	debug("Should return %s", state->buf_data);
@@ -107,7 +118,7 @@ static int lunix_chrdev_state_update(struct lunix_chrdev_state_struct *state)
 
 	if (i > LUNIX_CHRDEV_BUFSZ) {
 		printk(KERN_DEBUG "Buffer overflow detected");
-		return -EAGAIN;
+		return -EFAULT;
 	}
 
 	state->buf_lim = i;
@@ -139,11 +150,13 @@ static int lunix_chrdev_open(struct inode *inode, struct file *filp)
 	 * Associate this open file with the relevant sensor based on
 	 * the minor number of the device node [/dev/sensor<NO>-<TYPE>]
 	 */
-	minor = MINOR(inode->i_rdev);
+	minor = iminor(inode);
 
 	/* Allocate a new Lunix character device private state structure */
 	state = (struct lunix_chrdev_state_struct *)
 				kzalloc( sizeof(struct lunix_chrdev_state_struct), GFP_KERNEL );
+	// TODO: Check kzalloc return value
+	// TODO: Check type and sensor validity
 	state->sensor = &lunix_sensors[minor >> 3];
 	state->type = minor & 0x7;
 	state->buf_timestamp = 0;
@@ -162,6 +175,7 @@ static int lunix_chrdev_release(struct inode *inode, struct file *filp)
 	struct lunix_chrdev_state_struct *state;
 
 	state = (struct lunix_chrdev_state_struct *) filp->private_data;
+	// TODO: Check for NULL pointer
 	kfree(state);
 
 	return 0;
@@ -180,30 +194,12 @@ static ssize_t lunix_chrdev_read(struct file *filp, char __user *usrbuf, size_t 
 
 	struct lunix_sensor_struct *sensor;
 	struct lunix_chrdev_state_struct *state;
-	//struct lunix_msr_data_struct *msr;
 
 	state = filp->private_data;
 	WARN_ON(!state);
 
 	sensor = state->sensor;
 	WARN_ON(!sensor);
-
-	/* BEGIN: *** TESTING *** */
-	//msr = sensor->msr_data[state->type];
-	//spin_lock(&state->lock);
-	//sprintf(state->buf_data, "magic=%d, update=%d, value=%d\n", msr->magic, msr->last_update, msr->values[0]);
-	//spin_unlock(&state->lock);
-
-	//ret = copy_to_user(usrbuf, state->buf_data, 25 + 3*9);
-
-	//if (ret != 0) {
-	//	ret = -EINVAL;
-	//} else {
-	//	ret = 25+3*9;
-	//}
-
-	//goto out;
-	/* END:   *** TESTING *** */
 
 	/* Lock? */
 	down(&state->lock);
@@ -214,16 +210,14 @@ static ssize_t lunix_chrdev_read(struct file *filp, char __user *usrbuf, size_t 
 	 * on a "fresh" measurement, do so
 	 */
 	if (*f_pos == 0) {
-		//if (lunix_chrdev_state_update(state) == -EAGAIN) {
-		//	debug("This should not happen!");
-		//	return 0;
-		//}
 		while (lunix_chrdev_state_update(state) == -EAGAIN) {
 			/* ? */
 			up(&state->lock);
 
 			debug("Wating...");
 
+			// TODO: Check for errors in
+			//	wait_event_interruptible
 			if (wait_event_interruptible(sensor->wq, lunix_chrdev_state_needs_refresh(state)))
 				return -ERESTARTSYS;
 			/* The process needs to sleep */
