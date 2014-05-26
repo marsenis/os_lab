@@ -23,6 +23,7 @@
 #include <linux/mmzone.h>
 #include <linux/vmalloc.h>
 #include <linux/spinlock.h>
+#include <linux/strings.h>
 
 #include "lunix.h"
 #include "lunix-chrdev.h"
@@ -59,7 +60,7 @@ static int lunix_chrdev_state_update(struct lunix_chrdev_state_struct *state)
 {
 	struct lunix_sensor_struct *sensor;
 	uint16_t raw_data;
-   long cooked_data, ipart, fpart;
+   int cooked_data, ipart, fpart;
 
 	debug("entering\n");
 
@@ -80,7 +81,7 @@ static int lunix_chrdev_state_update(struct lunix_chrdev_state_struct *state)
    if (state->buf_timestamp == sensor->msr_data[state->type]->last_update) {
       debug("No new data...");
       spin_unlock(&sensor->lock);
-      ret -EAGAIN;
+      return -EAGAIN;
    }
 
    
@@ -110,17 +111,18 @@ static int lunix_chrdev_state_update(struct lunix_chrdev_state_struct *state)
          break;
       default:
          debug("WTF type is this?");
-         ret -1;
+         return -1;
    }
 
    ipart = cooked_data/1000;
    fpart = cooked_data%1000;
    
-   //cooked_data must be added to buff !!!!
-   //How, and in what format ???
-   
+   state->buf_lim = sprintf(state->data_buff, "%d.%d", ipart, fpart);
+   //maybe we want state->buf_lim++, to include the null character
+   //
    /* ? */
-	debug("leaving\n");
+	
+   debug("leaving\n");
 	return 0;
 }
 
