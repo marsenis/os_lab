@@ -72,7 +72,6 @@ static int lunix_chrdev_state_update(struct lunix_chrdev_state_struct *state)
    
    sensor = state->sensor;
    spin_lock(&sensor->lock);
-	down_interruptible(&state->lock);
    
    /*
 	 * Any new data available?
@@ -81,7 +80,6 @@ static int lunix_chrdev_state_update(struct lunix_chrdev_state_struct *state)
    if (state->buf_timestamp == sensor->msr_data[state->type]->last_update) {
       debug("No new data...");
       spin_unlock(&sensor->lock);
-      up(&state->lock);
       ret -EAGAIN;
    }
 
@@ -95,6 +93,7 @@ static int lunix_chrdev_state_update(struct lunix_chrdev_state_struct *state)
 	 * Now we can take our time to format them,
 	 * holding only the private state semaphore
 	 */
+   //it's alredy locked from lunix_chrdev_read
 
    switch(state->type) {
       case BATT:
@@ -119,8 +118,6 @@ static int lunix_chrdev_state_update(struct lunix_chrdev_state_struct *state)
    
    //cooked_data must be added to buff !!!!
    //How, and in what format ???
-
-   up(&state->lock);
    
    /* ? */
 	debug("leaving\n");
@@ -276,14 +273,14 @@ static ssize_t lunix_chrdev_read(struct file *filp, char __user *usrbuf, size_t 
    ret = state->buf_lim - *f_pos;
 
    if (ret <= cnt) { //maybe needs casting
-      if(copy_to_user(usrbuf, state->buf_data + *f_pos, ret)) {
+      if (copy_to_user(usrbuf, state->buf_data + *f_pos, ret)) {
          ret = -EFAULT;
          goto out;
       }
       *f_pos = 0;
    }
    else {
-      if (copy_to_user(usrbuf, state->buf_lim + *f_pos, cnt)) {
+      if (copy_to_user(usrbuf, state->buf_data + *f_pos, cnt)) {
          ret = -EFAULT;
          goto out;
       }
