@@ -33,8 +33,6 @@
  * Global data
  */
 struct cdev lunix_chrdev_cdev;
-char op[3][6] = { "BATT", "TEMP", "LIGHT" }; // *** TESTING ***
-int minor, sensor_id, operation; // *** TESTING ***
 
 /*
  * Just a quick [unlocked] check to see if the cached
@@ -117,7 +115,7 @@ static int lunix_chrdev_state_update(struct lunix_chrdev_state_struct *state)
    ipart = cooked_data/1000;
    fpart = cooked_data%1000;
    
-   state->buf_lim = sprintf(state->buf_data, "%d.%d", ipart, fpart);
+   state->buf_lim = sprintf(state->buf_data, "%d.%d\n", ipart, fpart);
    //maybe we want state->buf_lim++, to include the null character
    //
    /* ? */
@@ -135,7 +133,7 @@ static int lunix_chrdev_open(struct inode *inode, struct file *filp)
 {
 	/* Declarations */
 	/* ? */
-	int ret;
+	int ret, minor, sensor_id, operation;
    struct lunix_chrdev_state_struct *state = NULL;
 
 	debug("entering\n");
@@ -218,25 +216,6 @@ static ssize_t lunix_chrdev_read(struct file *filp, char __user *usrbuf, size_t 
 
 	sensor = state->sensor;
 	WARN_ON(!sensor);
-
-	/* BEGIN: *** TESTING *** *
-	char *mybuf;
-
-	mybuf = kzalloc(35, GFP_KERNEL);
-
-	sprintf(mybuf, "Sensor id: %d\nOperation: %s\n", sensor_id, op[operation]);
-	ret = copy_to_user(usrbuf, mybuf, 33);
-	
-	kfree(mybuf);
-
-	if (ret != 0) {
-		ret = -EINVAL;
-	} else {
-		ret = 33;
-	}
-
-	goto out;
-	* END:   *** TESTING *** */
 
 	/* Lock? */
 	/*
