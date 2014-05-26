@@ -109,19 +109,7 @@ static int lunix_chrdev_state_update(struct lunix_chrdev_state_struct *state)
 			return -EINVAL;
 	}
 	
-	sprintf(state->buf_data, "%ld.%.3ld\n", value / 1000, value % 1000);
-	debug("Should return %s", state->buf_data);
-
-	for (i = 0; i < LUNIX_CHRDEV_BUFSZ; i++)
-		if (state->buf_data[i] == '\0')
-			break;
-
-	if (i > LUNIX_CHRDEV_BUFSZ) {
-		printk(KERN_DEBUG "Buffer overflow detected");
-		return -EFAULT;
-	}
-
-	state->buf_lim = i;
+	state->buf_lim = snprintf(state->buf_data, LUNIX_CHRDEV_BUFSZ, "%+ld.%.3ld\n", value / 1000, value % 1000);
 	/* ? */
 
 	debug("leaving\n");
@@ -136,12 +124,13 @@ static int lunix_chrdev_state_update(struct lunix_chrdev_state_struct *state)
 static int lunix_chrdev_open(struct inode *inode, struct file *filp)
 {
 	/* Declarations */
-	int minor;
+	unsigned int minor, sensor_id, sensor_type;
 	struct lunix_chrdev_state_struct *state;
 	/* ? */
 	int ret;
 
 	debug("entering\n");
+
 	ret = -ENODEV;
 	if ((ret = nonseekable_open(inode, filp)) < 0)
 		goto out;
@@ -155,11 +144,23 @@ static int lunix_chrdev_open(struct inode *inode, struct file *filp)
 	/* Allocate a new Lunix character device private state structure */
 	state = (struct lunix_chrdev_state_struct *)
 				kzalloc( sizeof(struct lunix_chrdev_state_struct), GFP_KERNEL );
-	// TODO: Check kzalloc return value
-	// TODO: Check type and sensor validity
-	state->sensor = &lunix_sensors[minor >> 3];
-	state->type = minor & 0x7;
+	if (!state) {
+		ret = -EFAULT;
+		goto out;
+	}
+	
+	sensor_id   = minor >> 3;
+	sensor_type = minor & 0x7;
+
+	if (sensor_id >= lunix_sensor_cnt || sensor_type >= N_LUNIX_MSR) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	state->sensor = &lunix_sensors[sensor_id];
+	state->type   = sensor_type;
 	state->buf_timestamp = 0;
+
 	sema_init(&state->lock, 1);
 
 	filp->private_data = state;
@@ -175,7 +176,7 @@ static int lunix_chrdev_release(struct inode *inode, struct file *filp)
 	struct lunix_chrdev_state_struct *state;
 
 	state = (struct lunix_chrdev_state_struct *) filp->private_data;
-	// TODO: Check for NULL pointer
+	WARN_ON(!state);
 	kfree(state);
 
 	return 0;
@@ -216,8 +217,6 @@ static ssize_t lunix_chrdev_read(struct file *filp, char __user *usrbuf, size_t 
 
 			debug("Wating...");
 
-			// TODO: Check for errors in
-			//	wait_event_interruptible
 			if (wait_event_interruptible(sensor->wq, lunix_chrdev_state_needs_refresh(state)))
 				return -ERESTARTSYS;
 			/* The process needs to sleep */
@@ -244,7 +243,7 @@ static ssize_t lunix_chrdev_read(struct file *filp, char __user *usrbuf, size_t 
 
 	ret = copy_to_user(usrbuf, state->buf_data + *f_pos, bytes_to_copy);
 	if (ret != 0) {
-		ret = -EINVAL;
+		ret = -EFAULT;
 		goto out;
 	} else {
 		ret = bytes_to_copy;
