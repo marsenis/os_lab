@@ -23,7 +23,7 @@
 #include <linux/mmzone.h>
 #include <linux/vmalloc.h>
 #include <linux/spinlock.h>
-#include <linux/strings.h>
+#include <linux/string.h>
 
 #include "lunix.h"
 #include "lunix-chrdev.h"
@@ -117,7 +117,7 @@ static int lunix_chrdev_state_update(struct lunix_chrdev_state_struct *state)
    ipart = cooked_data/1000;
    fpart = cooked_data%1000;
    
-   state->buf_lim = sprintf(state->data_buff, "%d.%d", ipart, fpart);
+   state->buf_lim = sprintf(state->buf_data, "%d.%d", ipart, fpart);
    //maybe we want state->buf_lim++, to include the null character
    //
    /* ? */
@@ -155,7 +155,7 @@ static int lunix_chrdev_open(struct inode *inode, struct file *filp)
 	/* Allocate a new Lunix character device private state structure */
 	/* ? */
    state = (struct lunix_chrdev_state_struct*) vmalloc(sizeof(struct lunix_chrdev_state_struct));
-   if (lunix_chrdev_stat == NULL) {
+   if (state == NULL) {
       debug("Out of memory...\n");
       ret = -ENOMEM;
       goto out;
@@ -187,7 +187,7 @@ static int lunix_chrdev_open(struct inode *inode, struct file *filp)
 
    state->buf_timestamp = 0; //state->sensor->msr_data[operation]->last_update;
 
-   filp->private_date = state;
+   filp->private_data = state;
 out:
 	debug("leaving, with ret = %d\n", ret);
 	return ret;
@@ -196,7 +196,7 @@ out:
 static int lunix_chrdev_release(struct inode *inode, struct file *filp)
 {
 	/* ? */
-   vfree(file->private_data); //free lunix_chrdev_state_struct
+   vfree(filp->private_data); //free lunix_chrdev_state_struct
 	return 0;
 }
 
