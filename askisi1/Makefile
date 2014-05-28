@@ -52,6 +52,7 @@ clean:
 	rm -f lunix-attach
 	rm -f mk_lookup_tables
 	rm -f lunix-lookup.h
+	rm -f test
 
 lunix-attach: lunix.h lunix-attach.c
 	$(CC) $(USER_CFLAGS) -o $@ lunix-attach.c
@@ -65,3 +66,5 @@ lunix-lookup.h: mk_lookup_tables
 mk_lookup_tables: mk_lookup_tables.c
 	$(CC) $(USER_CFLAGS) -o mk_lookup_tables mk_lookup_tables.c -lm
 
+test: test.c
+	$(CC) $(USER_CFLAGS) -o test test.c

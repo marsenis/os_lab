@@ -60,7 +60,6 @@ static int lunix_chrdev_state_update(struct lunix_chrdev_state_struct *state)
 	uint16_t data;
 	uint32_t timestamp, magic;
 	long value;
-	int i;
 	
 	debug("entering state_update\n");
 
@@ -93,10 +92,19 @@ static int lunix_chrdev_state_update(struct lunix_chrdev_state_struct *state)
 	 */
 	state->buf_timestamp = timestamp;
 
-	WARN_ON( state->type >= N_LUNIX_MSR );
-	value = lookups[state->type][data];
-	
-	state->buf_lim = snprintf(state->buf_data, LUNIX_CHRDEV_BUFSZ, "%+ld.%.3ld\n", value / 1000, value % 1000);
+	switch (state->mode) {
+		case LUNIX_IOC_COOKED:
+			WARN_ON( state->type >= N_LUNIX_MSR );
+			value = lookups[state->type][data];
+			
+			state->buf_lim = snprintf(state->buf_data, LUNIX_CHRDEV_BUFSZ, "%+ld.%.3ld\n", value / 1000, value % 1000);
+			break;
+
+		case LUNIX_IOC_RAW:
+			state->buf_lim = snprintf(state->buf_data, LUNIX_CHRDEV_BUFSZ, "%hu\n", data);
+			break;
+	}
+			
 
 	debug("leaving\n");
 	return 0;
@@ -136,13 +144,14 @@ static int lunix_chrdev_open(struct inode *inode, struct file *filp)
 	sensor_id   = minor >> 3;
 	sensor_type = minor & 0x7;
 
-	WARN_ON(sensor_id >= lunix_sensor_cnt || sensor_type >= N_LUNIX_MSR)
+	WARN_ON(sensor_id >= lunix_sensor_cnt || sensor_type >= N_LUNIX_MSR);
 
 	state->sensor = &lunix_sensors[sensor_id];
 	WARN_ON( state->sensor == NULL );
 
 	state->type   = sensor_type;
 	state->buf_timestamp = 0;
+	state->mode = LUNIX_IOC_COOKED;
 
 	sema_init(&state->lock, 1);
 
@@ -166,8 +175,20 @@ static int lunix_chrdev_release(struct inode *inode, struct file *filp)
 
 static long lunix_chrdev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
-	/* Why? */
-	return -EINVAL;
+	struct lunix_chrdev_state_struct *state;
+
+	if (cmd != LUNIX_IOC_MODE)
+		return -EINVAL;
+	
+	WARN_ON( (state = filp->private_data) == NULL );
+
+	/*
+	 * mode = 0 : "Cooked" data (default)
+	 * mode = 1 : "Raw" data
+	 */
+	state->mode = !!arg;
+
+	return 0;
 }
 
 static ssize_t lunix_chrdev_read(struct file *filp, char __user *usrbuf, size_t cnt, loff_t *f_pos)

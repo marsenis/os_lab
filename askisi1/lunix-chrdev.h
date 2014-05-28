@@ -13,8 +13,8 @@
 /*
  * Lunix:TNG character device
  */
-#define LUNIX_CHRDEV_MAJOR	60	/* Reserved for local / experimental use */
-#define LUNIX_CHRDEV_BUFSZ      100      /* Buffer size used to hold textual info */
+#define LUNIX_CHRDEV_MAJOR	60		/* Reserved for local / experimental use */
+#define LUNIX_CHRDEV_BUFSZ  100     /* Buffer size used to hold textual info */
 
 /* Compile-time parameters */
 
@@ -29,7 +29,10 @@
 /*
  * Private state for an open character device node
  */
+enum lunix_ioc_enum { LUNIX_IOC_COOKED, LUNIX_IOC_RAW };
 struct lunix_chrdev_state_struct {
+	enum lunix_ioc_enum mode;
+
 	enum lunix_msr_enum type;
 	struct lunix_sensor_struct *sensor;
 
@@ -59,6 +62,7 @@ void lunix_chrdev_destroy(void);
  * Definition of ioctl commands
  */
 #define LUNIX_IOC_MAGIC			LUNIX_CHRDEV_MAJOR
+#define LUNIX_IOC_MODE          1
 //#define LUNIX_IOC_EXAMPLE		_IOR(LUNIX_IOC_MAGIC, 0, void *)
 
 #define LUNIX_IOC_MAXNR			0	
