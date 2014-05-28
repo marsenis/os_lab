@@ -43,10 +43,8 @@ static int lunix_chrdev_state_needs_refresh(struct lunix_chrdev_state_struct *st
 	struct lunix_sensor_struct *sensor;
 	
 	WARN_ON ( !(sensor = state->sensor));
-	/* ? */
 
-	/* The following return is bogus, just for the stub to compile */
-	return 0; /* ? */
+   return (state->buf_timestamp != sensor->msr_data[state->type]->last_update);
 }
 
 /*
@@ -75,7 +73,6 @@ static int lunix_chrdev_state_update(struct lunix_chrdev_state_struct *state)
    /*
 	 * Any new data available?
 	 */
-	/* ? */
    if (state->buf_timestamp == sensor->msr_data[state->type]->last_update) {
       debug("No new data...");
       spin_unlock(&sensor->lock);
@@ -116,9 +113,6 @@ static int lunix_chrdev_state_update(struct lunix_chrdev_state_struct *state)
    fpart = cooked_data%1000;
    
    state->buf_lim = sprintf(state->buf_data, "%d.%d\n", ipart, fpart);
-   //maybe we want state->buf_lim++, to include the null character
-   //
-   /* ? */
 	
    debug("leaving\n");
 	return 0;
@@ -145,7 +139,6 @@ static int lunix_chrdev_open(struct inode *inode, struct file *filp)
 	 * Associate this open file with the relevant sensor based on
 	 * the minor number of the device node [/dev/sensor<NO>-<TYPE>]
 	 */
-	//minor = MINOR(inode->i_rdev);
    minor = iminor(inode);
 	sensor_id = minor >> 3;
 	operation = minor & 0x7;
@@ -183,8 +176,8 @@ static int lunix_chrdev_open(struct inode *inode, struct file *filp)
    
    state->sensor = &lunix_sensors[sensor_id];
 
-   state->buf_timestamp = 0; //state->sensor->msr_data[operation]->last_update;
-
+   state->buf_timestamp = 0;
+   
    filp->private_data = state;
 out:
 	debug("leaving, with ret = %d\n", ret);
@@ -238,7 +231,8 @@ static ssize_t lunix_chrdev_read(struct file *filp, char __user *usrbuf, size_t 
          
          debug("feeling sleepy...");
          
-         if (wait_event_interruptible(sensor->wq, state->buf_timestamp != sensor->msr_data[state->type]->last_update))
+         //if (wait_event_interruptible(sensor->wq, state->buf_timestamp != sensor->msr_data[state->type]->last_update))
+         if (wait_event_interruptible(sensor->wq, lunix_chrdev_state_needs_refresh(state)))
             return -ERESTARTSYS;
          
          if (down_interruptible(&state->lock))
@@ -269,9 +263,6 @@ static ssize_t lunix_chrdev_read(struct file *filp, char __user *usrbuf, size_t 
       *f_pos += cnt;
    }
    
-   /* Auto-rewind on EOF mode*/
-   /* ? */
-
 out:
 	/* Unlock? */
    up(&state->lock);
